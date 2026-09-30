@@ -12,14 +12,23 @@ from kbc_moments.auth import authenticate, require_role
 
 st.set_page_config(page_title="KBC Moments", page_icon="💬", layout="wide")
 KBC_CUSTOMERS = 2_300_000
-LOGO = Path(__file__).parent / "assets" / "kbc_logo.png"  # add the official logo file here (not included)
+ASSETS = Path(__file__).parent / "assets"  # put the official logo here as kbc_logo.png / .jpg / .svg
+
+
+def find_logo():
+    for ext in ("png", "jpg", "jpeg", "svg"):
+        f = ASSETS / f"kbc_logo.{ext}"
+        if f.exists():
+            return f
+    return None
 BLUE, TEAL, RED = "#1E64C8", "#0A9E8C", "#C62828"  # chart colours (validated for colour-blind readers)
 
 
 def header(title: str):
-    if LOGO.exists():
+    logo = find_logo()
+    if logo:
         c1, c2 = st.columns([1, 8], vertical_alignment="center")
-        c1.image(str(LOGO), width=90)
+        c1.image(str(logo), width=110)
         c2.title(title)
     else:
         st.title(title)
@@ -114,7 +123,7 @@ def customer_view():
         st.subheader("Why am I seeing this?")
         if sig:
             for s in sig:
-                st.markdown(f"**{s.title}** · strength {s.strength:.0%}")
+                st.markdown(f"**{s.title}**")
                 for e in s.evidence:
                     st.caption(e)
         else:
@@ -127,42 +136,6 @@ def customer_view():
                 st.progress(min(p, 1.0), text=f"{p:.0%} {label}")
         if nudge:
             st.caption(nudge.context)
-
-    st.subheader("Your money over the next 12 months")
-    st.altair_chart(future_chart(sim), use_container_width=True)
-    worst = sim["current_p10"].min()
-    st.caption(
-        "We imagined 2,000 possible versions of your next year, based on your own habits. "
-        "The **blue line** is the most likely path of your current account; the **light blue band** shows "
-        "where it ends up in 8 out of 10 cases (a bit better or a bit worse). The **green line** is your savings. "
-        + ("Below the red line means overdraft." if worst < 0 else ""))
-
-
-def future_chart(sim):
-    months = sim["months"]
-    band = pd.DataFrame({"month": months, "low": sim["current_p10"], "high": sim["current_p90"]})
-    lines = pd.concat([
-        pd.DataFrame({"month": months, "amount": sim["current_p50"], "what": "Current account (most likely)"}),
-        pd.DataFrame({"month": months, "amount": sim["savings_p50"], "what": "Savings account (most likely)"}),
-    ])
-    x = alt.X("month:T", title=None, axis=alt.Axis(format="%b %Y", grid=False))
-    area = alt.Chart(band).mark_area(color=BLUE, opacity=0.15).encode(
-        x=x, y=alt.Y("low:Q", title="€"), y2="high:Q",
-        tooltip=[alt.Tooltip("month:T", title="Month", format="%B %Y"),
-                 alt.Tooltip("low:Q", title="If things go worse (€)", format=",.0f"),
-                 alt.Tooltip("high:Q", title="If things go better (€)", format=",.0f")])
-    colour = alt.Color("what:N", title=None, legend=alt.Legend(orient="top", labelLimit=0),
-                       scale=alt.Scale(domain=["Current account (most likely)", "Savings account (most likely)"],
-                                       range=[BLUE, TEAL]))
-    line = alt.Chart(lines).mark_line(strokeWidth=2, point=alt.OverlayMarkDef(size=40)).encode(
-        x=x, y="amount:Q", color=colour,
-        tooltip=[alt.Tooltip("month:T", title="Month", format="%B %Y"), alt.Tooltip("what:N", title=""),
-                 alt.Tooltip("amount:Q", title="Amount (€)", format=",.0f")])
-    zero = alt.Chart(pd.DataFrame({"y": [0], "label": ["Overdraft below this line"]}))
-    rule = zero.mark_rule(color=RED, strokeDash=[4, 4], strokeWidth=1.5).encode(y="y:Q")
-    text = zero.mark_text(color=RED, align="left", dx=4, dy=-6, fontSize=11).encode(
-        y="y:Q", text="label:N", x=alt.value(0))
-    return (area + line + rule + text).properties(height=320)
 
 
 def conversation(cid, df, bal, as_of, sig, pi, nudge):
